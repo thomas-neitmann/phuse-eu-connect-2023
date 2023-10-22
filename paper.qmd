@@ -293,9 +293,8 @@ As we look to the future of clinical research, {admiral} represents a compelling
 
 It takes a village to build good software and {admiral} it no exception. While I had the pleasure of leading the development of {admiral} for almost 2 years during my tenure at Roche it was the members of that "village around me" that made {admiral} what it is today. The list of contributors to {admiral} is long and ever-growing so I will not list them here but those involved know and I'd like to deeply thank them for their contributions. Each and everyone of you is a Stats Programming Rockstar!
 
-This paper has been created using Quarto version 1.4.435. The source document can be found on GitHub.
+This paper has been created using Quarto version 1.4.435. The source document can be found on [GitHub](https://github.com/thomas-neitmann/phuse-eu-connect-2023).
 
 ```{r}
 sessionInfo()
 ```
-
