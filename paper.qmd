@@ -258,7 +258,7 @@ Finally:
 
 ## Putting It All Together
 
-While both the `os` and `pfs` datasets created above contain the reference date and occurrence date of the event/censor neither dataset contains the actual time-to-event, i.e. the difference between `ADT` and `STARTDT`. After stacking both datasets together using `dplyr::bind_rows()`, this can be easily calculated and put into the `AVAL` variable using `admiral::derive_vars_duration()`. In addition I will use the `admiral::derive_var_obs_number()` to add the `ASEQ` variable, thereby completing the creation of this example ADTTE dataset.
+While both the `os` and `pfs` datasets created above contain the reference date and occurrence date of the event/censoring neither dataset contains the actual time-to-event, i.e. the difference between `ADT` and `STARTDT`. After stacking both datasets together using `dplyr::bind_rows()`, this can be easily calculated and put into the `AVAL` variable using `admiral::derive_vars_duration()`. In addition I will use the `admiral::derive_var_obs_number()` to add the `ASEQ` variable, thereby completing the creation of this example ADTTE dataset.
 
 ```{r}
 adtte <- bind_rows(os, pfs) %>% 
