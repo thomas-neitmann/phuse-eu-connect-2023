@@ -1,0 +1,301 @@
+---
+title: "Building CDISC-Compliant Time-to-Event Analysis Datasets with Ease Using {admiral}"
+author: "Thomas Neitmann, Denali Therapeutics"
+format: typst
+editor: visual
+---
+
+## Introduction
+
+Time-to-event analysis is a critical component of clinical trials, enabling researchers to assess the temporal aspects of patient outcomes, such as disease progression, survival, or the occurrence of adverse events of special interest. These analyses provide valuable insights into the efficacy and safety of investigational treatments and are fundamental in the decision-making process for bringing new therapies to market. However, the creation of CDISC-compliant time-to-event analysis datasets, a prerequisite for conducting these analyses, often presents a daunting challenge.
+
+In the clinical research landscape, the Clinical Data Interchange Standards Consortium (CDISC) has established a set of rigorous standards to ensure the uniform and efficient exchange of clinical trial data. Compliance with CDISC standards is paramount in maintaining data integrity and facilitating regulatory submissions. Achieving CDISC compliance for time-to-event analysis datasets requires meticulous attention to detail and the integration of data from various sources.
+
+Within time-to-event analysis, the fundamental concepts of "events" and "censoring" are of paramount importance. An "event" refers to the occurrence of the specific endpoint under investigation, which could be, for instance, a patient's death, disease progression, or an adverse event of special interest. In contrast, "censorings" are used to address cases where the event of interest has not yet occurred for a patient, typically due to the study ending or the patient being lost to follow-up. These rules play a crucial role in the analysis by ensuring that the data for patients who have not experienced the event are accurately considered and contribute to the overall analysis. Understanding and appropriately applying these rules are key aspects of creating CDISC-compliant time-to-event analysis datasets.
+
+This paper introduces a powerful tool for the the creation of CDISC-compliant time-to-event analysis datasets: the {admiral} R package. {admiral} offers a user-friendly and efficient solution for Statistical Programmers and Data Scientists working on clinical trials. By employing a declarative approach for defining events and censorings, {admiral} simplifies the process, reducing both the time and effort involved and minimizing errors.
+
+In the following sections, I will delve into the functionalities and features of the {admiral} package, exploring how it empowers Statistical Programmers and Data Scientists to handle single and composite events, integrate data from multiple source datasets, and, ultimately, ensure compliance with CDISC standards. Through a practical example, I will illustrate the tangible benefits of using {admiral} in the preparation of time-to-event analysis datasets.
+
+## The {admiral} R Package: An Overview
+
+The {admiral} R package, an abbreviation of "ADaM in R Asset Library," serves as a comprehensive solution for creating CDISC-compliant analysis datasets. Originally initiated through collaboration between Roche and GSK, {admiral} has since grown into a multifaceted ecosystem comprising several packages, with active participation from various pharmaceutical companies. This evolving ecosystem reflects the collective effort of industry experts dedicated to streamlining the process of dataset creation in the clinical research domain.
+
+A distinguishing feature of {admiral} is its development philosophy, which centers on its users. It serves as an entry point for all stakeholders in the pharmaceutical industry to collaborate, co-create, and contribute to a harmonized approach for developing ADaM datasets in R. It recognizes that ADaM requirements can vary widely based on specific study needs, and thus, the users themselves play a pivotal role in shaping and expanding the capabilities of {admiral} over time.
+
+While {admiral} does not aim to provide an all-encompassing solution for every conceivable ADaM dataset, it lays the foundation for an adaptable and extensible framework. The scope of {admiral} extends to:
+
+-   Providing a toolbox of re-usable functions and utilities for creating ADaM datasets using R scripts in a modular manner
+
+-   Encouraging pharmaceutical companies to actively participate in the development process, following the provided programming strategy and modular approach
+
+-   Ensuring comprehensive documentation and testing of functions, with practical examples, which can be found on the package website
+
+-   Offering vignettes that guide users in creating datasets for specific anaysis dataset types, such as ADSL, BDS, OCCDS, and other specialized functionalities
+
+At the heart of {admiral} is a set of design principles, encapsulated in the {admiral} manifesto, which guides its development. These principles include:
+
+1.  **Usability**: All {admiral} functions prioritize ease of use, accompanied by comprehensive documentation and real-life examples to support users in their endeavors.
+
+2.  **Simplicity**: Each function maintains a clear and singular purpose, avoiding complex, multi-purpose designs. {admiral} aims to minimize the number of functions with multiple, intricate arguments.
+
+3.  **Findability**: Ensuring functions are easily discoverable within a growing codebase is essential. Consistent naming conventions and organization-specific packages contribute to findability.
+
+4.  **Readability**: {admiral} emphasizes code readability, modularity, and extensive documentation. Its approach acknowledges that users and regulatory authorities may wish to delve into the codebase, underscoring the importance of comprehensibility and accessibility for all.
+
+## Deriving a Single Event Endpoint
+
+The example used throughout this paper is a fictitious phase I trial in oncology involving 10 patients. The following code creates a bare-bones ADSL dataset. The two most important variables are `LSTALVDT` and `DTHDT`, representing the last date know alive and death date, respectively.
+
+```{r message=FALSE}
+library(admiral)
+library(dplyr)
+
+adsl <- tibble::tribble(
+  ~USUBJID, ~TRTSDT,      ~TRTEDT,      ~LSTALVDT,    ~DTHDT,       ~DTHFL,
+  "01-001", "2022-02-15", "2022-08-01", NA,           "2022-08-19", "Y",
+  "01-002", "2022-04-10", "2022-10-07", "2023-10-24", NA,           "N",
+  "01-003", "2022-05-20", "2022-11-16", NA,           "2023-04-02", "Y",
+  "01-004", "2022-01-30", "2022-07-29", "2023-07-30", NA,           "N",
+  "01-005", "2022-03-05", "2022-09-01", NA,           "2023-06-15", "Y",
+  "01-006", "2022-06-25", "2022-12-22", NA,           "2023-06-05", "Y",
+  "01-007", "2022-01-10", "2022-07-09", "2023-07-10", NA,           "N",
+  "01-008", "2022-03-20", "2022-09-16", "2023-09-20", NA,           "N",
+  "01-009", "2022-04-05", "2022-10-02", "2023-10-05", NA,           "N",
+  "01-010", "2022-02-28", "2022-08-27", "2023-08-28", NA,           "N"
+) %>% 
+  mutate(
+    STUDYID = "PHUSEEU23",
+    across(ends_with("DT"), as.Date)
+  ) %>% 
+  relocate(STUDYID, .before = USUBJID)
+```
+
+I will start by deriving "Overall Survival", i.e. the time to death or a censoring in case the patient stays alive throughout the observation period. This is one of the most straightforward to derive time-to-event parameters as it involves only a single event, i.e. death.
+
+First, I will define the event of interest using `admiral::event_source()`. When using this function at a minimum two parameters have to be specified: `dataset_name` and `date`. The former refers to the **name** of the dataset (not the data frame object itself) in which to look for the occurrence of the event of interest and the latter is the date variable giving the occurrence date of the event.
+
+```{r}
+death <- event_source(
+  dataset_name = "adsl",
+  date = DTHDT
+)
+death
+```
+
+`admiral::event_source()` does not perform any calculations. It is merely a blueprint of "what to look for" and its sole purpose is to be passed as input to the `admiral::derive_param_tte()` function. Note that even though I did not specify it, `censor` is automatically set to `0` which is the expected value to indicate an event in the CDISC `CNSR` variable.
+
+Next, I will define the censoring using the `admiral::censor_source()` function. It has the same parameters as `admiral::event_source()` and in addition has `censor` parameter which can be set to any integer value `>= 1`.
+
+```{r}
+last_alive <- censor_source(
+  dataset_name = "adsl",
+  date = LSTALVDT
+)
+last_alive
+```
+
+With both the event and censoring defined I can now make use of the `admiral::derive_param_tte()` function to actually perform the calculation. In this example both the event and censor dates of interest can be found in ADSL and thus `source_datasets` is a list containing only that one dataset. `start_date` is the variable to use as the time-to-event origin date. It has to be a variable within `dataset_adsl`. `event_conditions` and `censor_conditions` are lists of `event_source` and `censor_source` objects, respectively. In this example there's only one event and one censoring and thus both lists contain only a single element. Finally, `set_values_to` enables one to specify the value of new variables to add to the dataset. At a minimum this should be `PARAMCD` and `PARAM` but could include additional variables like `PARCAT` if needed.
+
+```{r}
+derive_param_tte(
+  dataset_adsl = adsl,
+  source_datasets = list(adsl = adsl),
+  start_date = TRTSDT,
+  event_conditions = list(death),
+  censor_conditions = list(last_alive),
+  set_values_to = exprs(
+    PARAMCD = "OS",
+    PARAM = "Overall Survival"
+  )
+)
+```
+
+As can be seen above the output is a new dataset with the same number of observations as `dataset_adsl`. `ADT` is the event/censoring date and `STARTDT` the value of `start_date` taken from `dataset_adsl`. While `CNSR` indicates whether an event occurred (`CSNR == 0`) or the patient got censored (`CNSR >= 1`) there's metadata about the event and censoring definitions missing. In particular there should be an event description (`EVNTDESC`) and an indication of the source dataset (`SRCDOM`) and variable (`SRCDOM`). To add those I will adjust the `admiral::event_source()` and `admiral::censor_source()` calls making use of the `set_values_to` parameter in a similar manner to how I did when I used `admiral::derive_param_tte()` above.
+
+```{r}
+death <- event_source(
+  dataset_name = "adsl",
+  date = DTHDT,
+  set_values_to = exprs(
+    EVNTDESC = "Death",
+    SRCDOM = "ADSL",
+    SRCVAR = "DTHDT"
+  )
+)
+
+last_alive <- censor_source(
+  dataset_name = "adsl",
+  date = LSTALVDT,
+  set_values_to = exprs(
+    EVNTDESC = "Last Date Known Alive",
+    SRCDOM = "ADSL",
+    SRCVAR = "LSTALVDT"
+  )
+)
+
+os <- derive_param_tte(
+  dataset_adsl = adsl,
+  source_datasets = list(adsl = adsl),
+  start_date = TRTSDT,
+  event_conditions = list(death),
+  censor_conditions = list(last_alive),
+  set_values_to = exprs(
+    PARAMCD = "OS",
+    PARAM = "Overall Survival"
+  )
+)
+
+os
+```
+
+A can be seen in the output above, for records with `CNSR == 0` the `EVNTDESC`, `SRCDOM`, and `SRCVAR` variables have been populated with the values of the `death` object and for records with `CNSR == 1` with those values from the `last_alive` object.
+
+## Deriving a Composite Event Endpoint
+
+The next example will highlight the derivation of a composite event, namely "Progression Free Survival" (PFS). For PFS both death and progression of disease are events of interest. The latter is typically recorded within the ADRS dataset, a minimal example of which I will create below.
+
+```{r}
+adrs <- tibble::tribble(
+  ~USUBJID, ~PARAMCD, ~PARAM,                   ~ADT,          ~AVALC,
+  "01-001", "PD",     "Progression of Disease", NA_character_, "N",
+  "01-002", "PD",     "Progression of Disease", NA_character_, "N",
+  "01-003", "PD",     "Progression of Disease", "2022-11-01",  "Y",
+  "01-004", "PD",     "Progression of Disease", NA_character_, "N",
+  "01-005", "PD",     "Progression of Disease", "2022-04-22",  "Y",
+  "01-006", "PD",     "Progression of Disease", "2022-09-30",  "Y",
+  "01-007", "PD",     "Progression of Disease", NA_character_, "N",
+  "01-008", "PD",     "Progression of Disease", NA_character_, "N",
+  "01-009", "PD",     "Progression of Disease", NA_character_, "N",
+  "01-010", "PD",     "Progression of Disease", NA_character_, "N"
+) %>% 
+  mutate(
+    STUDYID = "PHUSEEU23",
+    ADT = as.Date(ADT),
+    ASEQ = 1:nrow(.)
+  ) %>% 
+  relocate(STUDYID, .before = USUBJID) %>% 
+  relocate(ASEQ, .after = ADT)
+```
+
+Since death is one of the two events of interest for PFS I can re-use the `death` object defined above and just have to create an additional `event_source` object for progression of disease. The `admiral::event_source()` call is similar to above but this time I have set an additional parameter, `filter`. As the name suggests this parameter indicates which subset of the dataset to take into account in the time-to-event derivation. While the minimal ADRS datasets created above has only a single `PARAMCD` and thus technically `filter` is not required, that is not typically the case with BDS datasets. Also note that there's one additional variable, `SRCSEQ`, defined within `set_values_to`. In case `admiral::derive_param_tte()` determines that progression of disease occurred than `SRCSEQ` would be filled with the **value** of the `ASEQ` variable from ADRS.
+
+```{r}
+pd <- event_source(
+  dataset_name = "adrs",
+  date = ADT,
+  filter = PARAMCD == "PD",
+  set_values_to = exprs(
+    EVNTDESC = "Progression of Disease",
+    SRCDOM = "ADRS",
+    SRCVAR = "ADT",
+    SRCSEQ = ASEQ
+  )
+)
+```
+
+With the both event definitions and the censoring rule in place I can now derive the progression free survival parameter using `admiral::derive_param_tte()`.
+
+```{r}
+pfs <- derive_param_tte(
+  dataset_adsl = adsl,
+  source_datasets = list(adsl = adsl, adrs = adrs),
+  start_date = TRTSDT,
+  event_conditions = list(pd, death),
+  censor_conditions = list(last_alive),
+  set_values_to = exprs(
+    PARAMCD = "PFS",
+    PARAM = "Progression Free Survival"
+  )
+)
+
+pfs
+```
+
+## How It Works: A Look Behind the Scenes
+
+When calling `admiral::derive_param_tte()` the following steps are performed to create the observations of the derived parameter.
+
+### Deriving Events
+
+1.  For each `event_source` dataset the observations as specified by the `filter` element are selected. Then for each patient the **first** observation (with respect to `date`) is selected.
+
+2.  The `ADT` variable is set to the variable specified by the `date` element.
+
+3.  The `CNSR` variable is added and set to the `censor` element.
+
+4.  The variables specified by the `set_values_to` element are added.
+
+5.  The selected observations of all `event_source` datasets are combined into a single dataset.
+
+6.  For each patient the **first** observation (with respect to the `ADT` variable) from the single dataset is selected.
+
+### Deriving Censorings
+
+1.  For each `censor_source` dataset the observations as specified by the `filter` element are selected. Then for each patient the **last** observation (with respect to `date`) is selected.
+
+2.  The `ADT` variable is set to the variable specified by the `date` element.
+
+3.  The `CNSR` variable is added and set to the `censor` element.
+
+4.  The variables specified by the `set_values_to` element are added.
+
+5.  The selected observations of all `censor_source` datasets are combined into a single dataset.
+
+6.  For each patient the **last** observation (with respect to the `ADT` variable) from the single dataset is selected.
+
+### Selecting an Event or Censoring
+
+For each subject an observation is selected. If an event is available, the event observation is selected. Otherwise the censoring observation is selected.
+
+Finally:
+
+1.  The variable specified for `start_date` is joined from the ADSL dataset.
+
+2.  The variables as defined by the `set_values_to` parameter of `admiral::derive_param_tte()` are added.
+
+3.  The `ADT` variable is set to the maximum of `ADT` and `STARTDT`.
+
+## Putting It All Together
+
+While both the `os` and `pfs` datasets created above contain the reference date and occurrence date of the event/censor neither dataset contains the actual time-to-event, i.e. the difference between `ADT` and `STARTDT`. After stacking both datasets together using `dplyr::bind_rows()`, this can be easily calculated and put into the `AVAL` variable using `admiral::derive_vars_duration()`. In addition I will use the `admiral::derive_var_obs_number()` to add the `ASEQ` variable, thereby completing the creation of this example ADTTE dataset.
+
+```{r}
+adtte <- bind_rows(os, pfs) %>% 
+  derive_vars_duration(
+    new_var = AVAL,
+    new_var_unit = AVALU,
+    start_date = STARTDT,
+    end_date = ADT
+  ) %>% 
+  derive_var_obs_number(
+    by_vars = exprs(STUDYID, USUBJID),
+    order = exprs(PARAMCD),
+    check_type = "error"
+  )
+
+adtte
+```
+
+## Conclusion
+
+In this paper, I have explored the potential of the {admiral} R package in simplifying the creation of CDISC-compliant time-to-event analysis datasets. Clinical trials in the pharmaceutical industry demand rigorous standards and meticulous attention to data processing, making the preparation of analysis datasets a critical yet often challenging endeavor. {admiral} presents a powerful, open-source, and modularized toolbox that empowers Statistical Programmers and Data Scienists to meet these challenges head-on.
+
+By providing a versatile solution that encourages a collaborative, user-driven approach, {admiral} aligns with the evolving needs of the pharmaceutical industry. Its development philosophy, encapsulated in the {admiral} manifesto, prioritizes usability, simplicity, findability, and readability. These principles not only facilitate dataset creation but also promote transparency, reproducibility, and adaptability, contributing to a harmonized approach across the industry.
+
+In the practical examples, I have showcased the capabilities of {admiral} in generating a CDISC-compliant ADTTE dataset using Overall and Progression Free Survival in the context of an oncology trial as an example.
+
+By embracing {admiral}, Statistical Programmers and Data Scientists can not only expedite the creation of CDISC-compliant datasets but also foster a culture of collaboration and transparency. With its user-driven design and commitment to industry standards, {admiral} stands as a powerful tool for driving progress in the pharmaceutical and clinical research sectors.
+
+As we look to the future of clinical research, {admiral} represents a compelling solution that empowers the industry to meet the ever-evolving challenges of data processing while ensuring that the foundation of research integrity remains unshaken.
+
+## Acknowledgments
+
+It takes a village to build good software and {admiral} it no exception. While I had the pleasure of leading the development of {admiral} for almost 2 years during my tenure at Roche it was the members of that "village around me" that made {admiral} what it is today. The list of contributors to {admiral} is long and ever-growing so I will not list them here but those involved know and I'd like to deeply thank them for their contributions. Each and everyone of you is a Stats Programming Rockstar!
+
+This paper has been created using Quarto version 1.4.435. The source document can be found on GitHub.
+
+```{r}
+sessionInfo()
+```
+
